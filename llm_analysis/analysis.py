@@ -2120,6 +2120,9 @@ class LLMAnalysis:
             global_batch_size,
         )
 
+        if batch_size_per_gpu < 1:
+            raise ValueError("batch_size_per_gpu must be greater than or equal to 1")
+
         if batch_size_per_gpu == 1:
             activation_memory_per_gpu, activation_memory_attn_per_gpu, activation_memory_mlp_per_gpu, activation_memory_layernorm_per_gpu = activation_memory_batch_size_1, activation_memory_attn_batch_size_1, mlp_activation_memory_batch_size_1, layernorm_activation_memory_batch_size_1
         else:
