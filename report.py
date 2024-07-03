@@ -1,9 +1,13 @@
+import csv
 from llm_analysis.analysis import infer,train
+import os
 
 REPORT_PATH = "outputs_infer/report.md"
 INFER_REPORT_CSV_PATH = "outputs_infer/infer_report.csv"
 TRAIN_REPORT_CSV_PATH = "outputs_train/train_report.csv"
 
+os.makedirs("outputs_infer", exist_ok=True)
+os.makedirs("outputs_train", exist_ok=True)
 
 REPORT_SETTINGS_TEMPLATE = {
     "model_name": "decapoda-research_llama-7b-hf",
@@ -20,7 +24,7 @@ QUNTIZATION_SENARIOS_NAME_MAP = {
     "w8a8e16": "8-bit",
     "w16a16e16": "16-bit",
 }
-GPU_LIST = ["mtt-s3000-32gb", "a6000-48gb", "l20-48gb", "l40-48gb"]
+GPU_LIST = ["mtt-s3000-32gb", "a6000-48gb", "l20-48gb", "l40-48gb",]
 GPU_COUNT_MAP = {
     "mtt-s3000-32gb": 4,
     "a6000-48gb": 3,
@@ -30,11 +34,13 @@ GPU_COUNT_MAP = {
 GPU_PRICE_MAP = {
     "mtt-s3000-32gb": 22546.6,
     "a6000-48gb": 5400,
-    "l20-48gb": 4834,
+    "l20-48gb": 4063,
     "l40-48gb": 7707,
 }
 USER_COUNT_CASES = [1, 5, 20, 100]
 
+infer_reports:list[dict]=[]
+train_reports:list[dict]=[]
 with open(REPORT_PATH, "w") as report_file:
     def print_and_save(line):
         print(line)
@@ -91,12 +97,35 @@ with open(REPORT_PATH, "w") as report_file:
                     formatted_benchmarks_wps = "{:.2f}".format(average_benchmarks_total_words_per_sec)
 
                     print_and_save(f"| {user_count} | {formatted_perfect_latency} s | {formatted_upper_benchmarks_latency} s | {formatted_lower_benchmarks_latency} s | {formatted_benchmarks_wps} | - |")
+                    infer_reports.append({
+                        "quantization":quantization,
+                        "gpu":gpu,
+                        "user_count":user_count,
+                        "perfect_latency":perfect_total_latency,
+                        "upper_latency":upper_benchmarks_total_latency,
+                        "lower_latency":lower_benchmarks_total_latency,
+                        "perfect_wps":perfect_total_words_per_sec,
+                        "benchmarks_wps":average_benchmarks_total_words_per_sec,
+                        "cost_efficiency":price / average_benchmarks_total_words_per_sec,
+                        "word_cost": average_benchmarks_total_words_per_sec / price,
+                    })
                 except Exception as e:
                     # Handle errors, avoiding table format breakage
                     error_message = str(e).replace("|", ",")
                     if "too large to fit in GPU memory" in error_message:
                         error_message = "Insufficient vRAM"
                     print_and_save(f"| {user_count} | - | - | - | - | {error_message} |")
+                    infer_reports.append({
+                        "gpu":gpu,
+                        "user_count":user_count,
+                        "perfect_latency":None,
+                        "upper_latency":None,
+                        "lower_latency":None,
+                        "perfect_wps":None,
+                        "benchmarks_wps":None,
+                        "cost_efficiency":None,
+                        "word_cost":None,
+                    })
                 pass
             print_and_save(f"###### Cost efficiency: ${price / average_benchmarks_total_words_per_sec:.2f} HKD. (Speed cost efficiency).")
             print_and_save("---")
@@ -138,7 +167,39 @@ with open(REPORT_PATH, "w") as report_file:
                 formatted_gpu_hours = "{:.2f}".format(gpu_hours)
                 formatted_total_gpu_days = "{:.2f}".format(total_gpu_days)
                 print_and_save(f"| {gpu} x {settings['tp_size']} | {case} | {formatted_gpu_hours} hours | {formatted_total_gpu_days} nights |")
+                train_reports.append({
+                    "gpu":gpu,
+                    "case":case,
+                    "gpu_hours":gpu_hours,
+                    "total_gpu_days":total_gpu_days,
+                })
             except Exception as e:
                 # Assuming errors are strings that can be directly included
                 error_message = str(e).replace("|", ",")  # Replace '|' to avoid breaking table format if present in error
                 print_and_save(f"| {gpu} x {settings['tp_size']} | {case} | - | - |")
+                train_reports.append({
+                    "gpu":gpu,
+                    "case":case,
+                    "gpu_hours":None,
+                    "total_gpu_days":None,
+                })
+
+# Writing to CSV
+with open(INFER_REPORT_CSV_PATH, mode='w', newline='') as file:
+    writer = csv.DictWriter(file, fieldnames=infer_reports[0].keys())
+
+    # Write column names as the first row in the CSV
+    writer.writeheader()
+
+    # Write data rows
+    for row in infer_reports:
+        writer.writerow(row)
+with open(TRAIN_REPORT_CSV_PATH, mode='w', newline='') as file:
+    writer = csv.DictWriter(file, fieldnames=train_reports[0].keys())
+
+    # Write column names as the first row in the CSV
+    writer.writeheader()
+
+    # Write data rows
+    for row in train_reports:
+        writer.writerow(row)
